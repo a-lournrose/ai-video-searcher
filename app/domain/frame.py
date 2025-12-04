@@ -9,3 +9,5 @@ from .value_objects import FrameId
 class Frame:
     id: FrameId
     timestamp_sec: float
+    source_id: str
+    at: str

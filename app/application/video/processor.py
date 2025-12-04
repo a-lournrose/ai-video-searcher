@@ -1,33 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Mapping, Optional, Sequence
 from uuid import uuid4
 
 import numpy as np
 
-from app.application.video.frame_iterator import iter_default_video_frames, RawFrame
+from app.application.video.frame_iterator import RawFrame, TARGET_FPS, iter_video_frames
 from app.application.video.object_detector import (
-    detect_objects_on_frame,
     DetectedObject,
     DetectedObjectCategory,
+    detect_objects_on_frame,
 )
 from app.application.video.plate_detector import (
-    detect_plates_on_vehicle,
     PlateDetection,
+    detect_plates_on_vehicle,
 )
 from app.application.video.car_color_extractor import (
-    extract_car_hsv_profile,
     CarColorProfile,
+    extract_car_hsv_profile,
 )
 from app.application.video.plate_ocr import (
-    recognize_plate_from_image,
     PlateOcrResult,
+    recognize_plate_from_image,
 )
 from app.application.video.person_color_extractor import (
-    extract_person_color_profile,
     PersonColorProfile,
     RegionColor,
+    extract_person_color_profile,
 )
 from app.application.embeddings.ruclip_embedder import (
     embed_frame_from_raw,
@@ -35,27 +38,148 @@ from app.application.embeddings.ruclip_embedder import (
 )
 
 from app.domain.frame import Frame
-from app.domain.object import Object as DomainObject, BBox as DomainBBox
-from app.domain.attributes import TransportAttributes, PersonAttributes
+from app.domain.object import BBox as DomainBBox
+from app.domain.object import Object as DomainObject
+from app.domain.attributes import PersonAttributes, TransportAttributes
 from app.domain.value_objects import (
     FrameId,
     ObjectId,
     ObjectType,
-    TransportAttrsId,
     PersonAttrsId,
+    TransportAttrsId,
 )
 
 from app.infrastructure.db.postgres import PostgresDatabase, load_config_from_env
 from app.infrastructure.repositories import (
+    EmbeddingPostgresRepository,
     FramePostgresRepository,
     ObjectPostgresRepository,
-    TransportAttributesPostgresRepository,
     PersonAttributesPostgresRepository,
-    EmbeddingPostgresRepository,
+    TransportAttributesPostgresRepository,
 )
 
 
-async def process_video() -> None:
+@dataclass(frozen=True)
+class TimeRange:
+    """
+    Одна временная секция исходного потока.
+
+    start_at / end_at — реальные временные метки (одна ось времени),
+    а сам видеофрагмент — это конкатенация таких кусков подряд (другая ось времени).
+    """
+    start_at: datetime
+    end_at: datetime
+
+    @property
+    def duration_sec(self) -> float:
+        return max(
+            0.0,
+            (self.end_at - self.start_at).total_seconds(),
+        )
+
+
+class FrameTimeMapper:
+    """
+    Маппит позицию внутри фрагмента (секунды от начала файла) в абсолютное время
+    по списку ranges.
+
+    Внутри фрагмент = конкатенация участков:
+        [start1, end1), [start2, end2), ...
+
+    t=0..duration1   -> start1 + t
+    t=duration1..duration1+duration2 -> start2 + (t - duration1)
+    и т.д.
+
+    Если t выходит чуть за суммарную длительность ranges (погрешность из-за кодека),
+    возвращаем конец последнего диапазона и логируем предупреждение один раз.
+    """
+
+    def __init__(self, ranges: Sequence[TimeRange]) -> None:
+        if not ranges:
+            raise ValueError("FrameTimeMapper requires at least one range")
+
+        self._ranges: list[TimeRange] = list(ranges)
+        self._prefix_sums: list[float] = []
+        total = 0.0
+
+        for r in self._ranges:
+            dur = r.duration_sec
+            total += dur
+            self._prefix_sums.append(total)
+
+        self.total_duration_sec: float = total
+        self._warned_overflow: bool = False
+
+    def map_to_datetime(self, fragment_sec: float) -> datetime:
+        """
+        fragment_sec — timestamp кадра внутри видеофрагмента (0, 1, 2, ...).
+
+        Возвращает datetime в реальном времени.
+        """
+        if fragment_sec < 0:
+            fragment_sec = 0.0
+
+        # Хвост, когда видео чуть длиннее суммы ranges.
+        if fragment_sec >= self.total_duration_sec:
+            if not self._warned_overflow:
+                print(
+                    "[WARN] frame timestamp is slightly beyond total ranges duration: "
+                    f"{fragment_sec:.3f} > {self.total_duration_sec:.3f}. "
+                    "Mapping to the end of the last range."
+                )
+                self._warned_overflow = True
+
+            return self._ranges[-1].end_at
+
+        # Ищем диапазон, в который попадает fragment_sec
+        prev_sum = 0.0
+        for idx, s in enumerate(self._prefix_sums):
+            if fragment_sec < s:
+                r = self._ranges[idx]
+                offset = fragment_sec - prev_sum
+                return r.start_at + timedelta(seconds=offset)
+            prev_sum = s
+
+        # Теоретически не должны сюда попасть, но на всякий случай
+        return self._ranges[-1].end_at
+
+    def map_to_iso(self, fragment_sec: float) -> str:
+        return self.map_to_datetime(fragment_sec).isoformat()
+
+
+def _build_time_mapper_from_ranges(
+    ranges: Sequence[Mapping[str, str]],
+) -> FrameTimeMapper:
+    """
+    ranges: последовательность словарей вида:
+        {"start_at": "2025-01-01T10:00:00", "end_at": "2025-01-01T10:00:08"}
+
+    Преобразуем в TimeRange и собираем FrameTimeMapper.
+    """
+    parsed: list[TimeRange] = []
+
+    for item in ranges:
+        start_raw = item["start_at"]
+        end_raw = item["end_at"]
+
+        start_at = datetime.fromisoformat(start_raw)
+        end_at = datetime.fromisoformat(end_raw)
+
+        if end_at <= start_at:
+            raise ValueError(
+                f"Range end_at must be greater than start_at: {start_raw} .. {end_raw}",
+            )
+
+        parsed.append(TimeRange(start_at=start_at, end_at=end_at))
+
+    return FrameTimeMapper(parsed)
+
+
+async def process_video(
+    video_source: str | Path,
+    source_id: str,
+    ranges: Sequence[Mapping[str, str]],
+) -> None:
     """
     Главный пайплайн обработки видео.
 
@@ -64,10 +188,17 @@ async def process_video() -> None:
     - embeddings: для кадров и объектов
     - transport_attrs: цвет (HSV-строка), номер
     - person_attrs: верх/низ одежды (HSV-строки)
+
+    Дополнительно:
+    - В каждую запись Frame пишем:
+        * source_id — идентификатор источника
+        * at        — ISO-время кадра, рассчитанное по ranges
     """
     config = load_config_from_env()
     db = PostgresDatabase(config)
     await db.connect()
+
+    time_mapper = _build_time_mapper_from_ranges(ranges)
 
     try:
         frame_repo = FramePostgresRepository(db)
@@ -86,9 +217,16 @@ async def process_video() -> None:
         total_transport_attrs_saved = 0
         total_person_attrs_saved = 0
 
-        for raw in iter_default_video_frames():
+        for raw in iter_video_frames(video_source, TARGET_FPS):
             # 1. Сохраняем кадр
-            frame = _raw_frame_to_frame_entity(raw)
+            frame = _raw_frame_to_frame_entity(
+                raw=raw,
+                source_id=source_id,
+                time_mapper=time_mapper,
+            )
+
+            print(frame)
+
             await frame_repo.create(frame)
             total_frames += 1
 
@@ -119,13 +257,17 @@ async def process_video() -> None:
                     await embedding_repo.create(obj_embedding)
                     total_embeddings_saved += 1
                 except Exception as exc:
-                    print(f"[WARN] object embedding failed for object {obj.id}: {exc}")
+                    print(
+                        f"[WARN] object embedding failed for object {obj.id}: {exc}",
+                    )
 
             persons_on_frame = sum(
                 1 for d, _ in det_obj_pairs if d.category == DetectedObjectCategory.PERSON
             )
             transport_on_frame = sum(
-                1 for d, _ in det_obj_pairs if d.category == DetectedObjectCategory.TRANSPORT
+                1
+                for d, _ in det_obj_pairs
+                if d.category == DetectedObjectCategory.TRANSPORT
             )
 
             total_persons += persons_on_frame
@@ -148,7 +290,6 @@ async def process_video() -> None:
                     color_profile = _safe_extract_car_color(car_crop)
                     plate_ocr_result = _safe_detect_and_ocr_plate(car_crop)
 
-                    # HSV-строка для БД (если цвета нет — пустая строка)
                     color_str = _color_profile_to_hsv_string(color_profile) or ""
                     plate_norm = (
                         plate_ocr_result.normalized_plate
@@ -167,7 +308,7 @@ async def process_video() -> None:
                         total_transport_attrs_saved += 1
                     except Exception as exc:
                         print(
-                            f"[WARN] transport attrs save failed for object {obj.id}: {exc}"
+                            f"[WARN] transport attrs save failed for object {obj.id}: {exc}",
                         )
 
                     _log_transport_analysis(
@@ -192,10 +333,10 @@ async def process_video() -> None:
                     person_colors = _safe_extract_person_color(person_crop)
 
                     upper_str = _region_color_to_hsv_string(
-                        person_colors.upper_color if person_colors else None
+                        person_colors.upper_color if person_colors else None,
                     )
                     lower_str = _region_color_to_hsv_string(
-                        person_colors.lower_color if person_colors else None
+                        person_colors.lower_color if person_colors else None,
                     )
 
                     try:
@@ -209,7 +350,7 @@ async def process_video() -> None:
                         total_person_attrs_saved += 1
                     except Exception as exc:
                         print(
-                            f"[WARN] person attrs save failed for object {obj.id}: {exc}"
+                            f"[WARN] person attrs save failed for object {obj.id}: {exc}",
                         )
 
                     _log_person_analysis(
@@ -244,10 +385,19 @@ async def process_video() -> None:
         await db.close()
 
 
-def _raw_frame_to_frame_entity(raw: RawFrame) -> Frame:
+def _raw_frame_to_frame_entity(
+    raw: RawFrame,
+    source_id: str,
+    time_mapper: FrameTimeMapper,
+) -> Frame:
+    """
+    Строит доменную сущность Frame из сырого кадра + маппера времени.
+    """
     return Frame(
         id=FrameId(str(uuid4())),
         timestamp_sec=raw.timestamp_sec,
+        source_id=source_id,
+        at=time_mapper.map_to_iso(raw.timestamp_sec),
     )
 
 
@@ -382,7 +532,7 @@ def _log_frame_summary(
     print(
         f"[frame #{raw.index:04d} @ {raw.timestamp_sec:6.3f}s] "
         f"objects={objects_on_frame}, persons={persons_on_frame}, "
-        f"transport={transport_on_frame}, detections_raw={len(detections)}"
+        f"transport={transport_on_frame}, detections_raw={len(detections)}",
     )
 
 
@@ -423,7 +573,7 @@ def _log_transport_analysis(
 
     print(
         f"[frame #{raw.index:04d} @ {raw.timestamp_sec:6.3f}s] "
-        f"TRANSPORT[{transport_index}] {color_part}; {plate_part}"
+        f"TRANSPORT[{transport_index}] {color_part}; {plate_part}",
     )
 
 
@@ -442,9 +592,11 @@ def _log_person_analysis(
 
     print(
         f"[frame #{raw.index:04d} @ {raw.timestamp_sec:6.3f}s] "
-        f"PERSON[{person_index}] {upper_part}; {lower_part}"
+        f"PERSON[{person_index}] {upper_part}; {lower_part}",
     )
 
 
 if __name__ == "__main__":
-    asyncio.run(process_video())
+    raise RuntimeError(
+        "Use process_video(...) from another module, passing video_source, source_id and ranges.",
+    )

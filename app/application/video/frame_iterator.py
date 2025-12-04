@@ -2,54 +2,65 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Union
 
 import cv2
 import numpy as np
 
-from app.config import VIDEO_PATH, TARGET_FPS
+from app.config import VIDEO_SOURCE, TARGET_FPS
+
+
+VideoSource = Union[str, Path]
 
 
 @dataclass(frozen=True)
 class RawFrame:
-    """
-    "Сырой" кадр из видео.
-
-    index:
-        Порядковый номер выбранного кадра после даунсэмплинга.
-    timestamp_sec:
-        Время в секундах от начала видео (по исходному FPS).
-    image:
-        Кадр в формате BGR (как даёт OpenCV).
-    """
     index: int
     timestamp_sec: float
     image: np.ndarray
 
 
+def _normalize_source(source: VideoSource) -> str:
+    """
+    Приводит источник видео к строке, приемлемой для cv2.VideoCapture.
+    Поддерживает:
+      - Path
+      - локальные файлы
+      - http(s) ссылки (включая .m3u8)
+      - rtsp
+    """
+    if isinstance(source, Path):
+        return str(source)
+    return source
+
+
 def iter_video_frames(
-    video_path: Path,
+    video_source: VideoSource,
     target_fps: float,
 ) -> Iterator[RawFrame]:
     """
-    Чистая функция: на вход путь к видео и нужный FPS,
+    Чистая функция: на вход источник видео и целевой FPS,
     на выход — поток RawFrame.
 
-    Никаких репозиториев и БД.
+    Работает и с локальными файлами, и с URL (m3u8 / ts / HLS).
     """
-    if not video_path.exists():
-        raise FileNotFoundError(f"Video not found: {video_path}")
+    src = _normalize_source(video_source)
 
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(src)
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise RuntimeError(f"Cannot open video source: {src}")
 
     try:
         fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps is None or fps <= 0:
-            raise RuntimeError(f"Cannot read FPS for: {video_path}")
 
-        step = max(1, int(round(fps / target_fps)))
+        # Для HLS fps часто возвращается как 0 — это нормально.
+        # Тогда мы не можем рассчитывать правильный timestamp.
+        # Поэтому выбираем безопасный вариант: читаем кадры как есть.
+        if fps is None or fps <= 0:
+            fps = None
+            step = 1
+        else:
+            step = max(1, int(round(fps / target_fps)))
 
         src_index = 0
         out_index = 0
@@ -59,8 +70,12 @@ def iter_video_frames(
             if not ok:
                 break
 
+            # для m3u8 кадров бывает много, но fps неизвестно
             if src_index % step == 0:
-                timestamp = src_index / fps
+                # timestamp для файлов — реальный
+                # timestamp для HLS (fps неизвестно) — равен индексу
+                timestamp = (src_index / fps) if fps else float(src_index)
+
                 yield RawFrame(
                     index=out_index,
                     timestamp_sec=timestamp,
@@ -75,4 +90,4 @@ def iter_video_frames(
 
 
 def iter_default_video_frames() -> Iterator[RawFrame]:
-    return iter_video_frames(VIDEO_PATH, TARGET_FPS)
+    return iter_video_frames(VIDEO_SOURCE, TARGET_FPS)

@@ -15,20 +15,30 @@ class FramePostgresRepository(FrameRepository):
         self._db = db
 
     async def create(self, frame: Frame) -> None:
-        sql = """
-        INSERT INTO frames (id, timestamp_sec)
-        VALUES ($1, $2);
         """
-
-        await self._db.execute(sql, frame.id, frame.timestamp_sec)
+        Inserts a new frame entity to database.
+        """
+        sql = """
+        INSERT INTO frames (id, timestamp_sec, source_id, at)
+        VALUES ($1, $2, $3, $4);
+        """
+        await self._db.execute(
+            sql,
+            frame.id,
+            frame.timestamp_sec,
+            frame.source_id,
+            frame.at,
+        )
 
     async def find_by_id(self, frame_id: FrameId) -> Optional[Frame]:
+        """
+        Returns frame entity by id.
+        """
         sql = """
-        SELECT id, timestamp_sec
+        SELECT id, timestamp_sec, source_id, at
         FROM frames
         WHERE id = $1;
         """
-
         row = await self._db.fetchrow(sql, frame_id)
         if row is None:
             return None
@@ -37,7 +47,12 @@ class FramePostgresRepository(FrameRepository):
 
     @staticmethod
     def _map_row_to_frame(row: Record) -> Frame:
+        """
+        Mapping DB row to Frame domain model.
+        """
         return Frame(
             id=FrameId(row["id"]),
             timestamp_sec=float(row["timestamp_sec"]),
+            source_id=row["source_id"],
+            at=row["at"],
         )
