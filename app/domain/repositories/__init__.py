@@ -3,6 +3,8 @@ from .object_repository import ObjectRepository
 from .transport_attrs_repository import TransportAttributesRepository
 from .person_attrs_repository import PersonAttributesRepository
 from .embedding_repository import EmbeddingRepository
+from .task_repository import TaskRepository
+from .source_repository import SourceRepository
 
 __all__ = [
     "FrameRepository",
@@ -10,4 +12,6 @@ __all__ = [
     "TransportAttributesRepository",
     "PersonAttributesRepository",
     "EmbeddingRepository",
+    "TaskRepository",
+    "SourceRepository"
 ]

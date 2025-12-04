@@ -11,7 +11,10 @@ TRUNCATE TABLE
     person_attrs,
     embeddings,
     objects,
-    frames
+    frames,
+    sources,
+    tasks,
+    vectorized_periods
 RESTART IDENTITY CASCADE;
 """
 

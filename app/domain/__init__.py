@@ -1,3 +1,8 @@
+from .attributes import TransportAttributes, PersonAttributes
+from .embedding import Embedding
+from .frame import Frame
+from .object import Object
+from .task import Task
 from .value_objects import (
     FrameId,
     ObjectId,
@@ -6,15 +11,15 @@ from .value_objects import (
     EmbeddingId,
     ObjectType,
     EmbeddingEntityType,
+    TaskId,
+    SourceRowId,
+    VectorizedPeriodId
 )
-from .frame import Frame
-from .object import Object
-from .attributes import TransportAttributes, PersonAttributes
-from .embedding import Embedding
 
 __all__ = [
     "FrameId",
     "ObjectId",
+    "TaskId",
     "TransportAttrsId",
     "PersonAttrsId",
     "EmbeddingId",
@@ -25,4 +30,7 @@ __all__ = [
     "TransportAttributes",
     "PersonAttributes",
     "Embedding",
+    "SourceRowId",
+    "Task",
+    "VectorizedPeriodId"
 ]

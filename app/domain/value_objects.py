@@ -9,6 +9,9 @@ ObjectId = NewType("ObjectId", UUID)
 TransportAttrsId = NewType("TransportAttrsId", UUID)
 PersonAttrsId = NewType("PersonAttrsId", UUID)
 EmbeddingId = NewType("EmbeddingId", UUID)
+TaskId = NewType("TaskId", UUID)
+SourceRowId = NewType("SourceRowId", UUID)
+VectorizedPeriodId = NewType("VectorizedPeriodId", UUID)
 
 
 class ObjectType(str, Enum):
