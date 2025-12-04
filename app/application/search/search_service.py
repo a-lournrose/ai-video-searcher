@@ -18,6 +18,7 @@ from app.infrastructure.db.postgres import PostgresDatabase
 from app.application.video.plate_ocr import normalize_plate_text
 from rapidfuzz import fuzz
 
+
 @dataclass(frozen=True)
 class SearchHit:
     """
@@ -51,6 +52,7 @@ class SearchHit:
     color_score: float
     plate_score: float
 
+
 def _filter_hits(
     hits: List[SearchHit],
     query_has_color: bool,
@@ -68,16 +70,12 @@ def _filter_hits(
     filtered: List[SearchHit] = []
 
     for hit in hits:
-        # CLIP — всегда обязательный минимум
         if hit.clip_score < clip_min:
             continue
 
-        # Если пользователь в запросе явно указал цвет —
-        # игнорируем объекты без цветового сигнала.
         if query_has_color and hit.color_score <= 0.0:
             continue
 
-        # Аналогично для номера
         if query_has_plate and hit.plate_score <= 0.0:
             continue
 
@@ -91,13 +89,18 @@ def _filter_hits(
 
 async def search_by_text(
     db: PostgresDatabase,
+    source_id: str,
+    start_at: str,
+    end_at: str,
     text: str,
     max_candidates: int = 2000,
     clip_min_pure: float = 0.30,
     final_min: float = 0.30,
 ) -> List[SearchHit]:
     """
-    Главная функция поиска.
+    Главная функция поиска по тексту в рамках:
+      - конкретного источника (source_id),
+      - временного окна [start_at, end_at] (ISO-строки).
 
     - Парсит текст (parse_query),
     - Строит эмбеддинг cleaned_text через ruCLIP,
@@ -108,14 +111,13 @@ async def search_by_text(
         * clip_score >= clip_min_pure (всегда),
         * если в запросе был цвет — требуем color_score > 0,
         * если в запросе был номер — требуем plate_score > 0,
-        * final_score >= final_min (адаптивно, см. ниже),
+        * final_score >= final_min (адаптивно),
     - Если после фильтрации пусто, понижает final_min ступенчато на 0.1,
       пока не появятся какие-то результаты, и их возвращает.
     """
 
     parsed = parse_query(text)
 
-    # Какие сигналы реально есть в запросе
     query_has_color = (
         parsed.color is not None
         or parsed.upper_color is not None
@@ -125,15 +127,26 @@ async def search_by_text(
 
     query_vector = embed_text(parsed.cleaned_text)
 
-    # Кандидаты
     if parsed.type is None:
-        candidates = await _fetch_frame_candidates(db, max_candidates)
+        candidates = await _fetch_frame_candidates(
+            db=db,
+            source_id=source_id,
+            start_at=start_at,
+            end_at=end_at,
+            max_candidates=max_candidates,
+        )
         hits = _score_frames(parsed, query_vector, candidates)
     else:
-        candidates = await _fetch_object_candidates(db, parsed.type, max_candidates)
+        candidates = await _fetch_object_candidates(
+            db=db,
+            source_id=source_id,
+            start_at=start_at,
+            end_at=end_at,
+            query_type=parsed.type,
+            max_candidates=max_candidates,
+        )
         hits = _score_objects(parsed, query_vector, candidates)
 
-    # Базовая фильтрация по исходному final_min
     filtered = _filter_hits(
         hits=hits,
         query_has_color=query_has_color,
@@ -146,7 +159,6 @@ async def search_by_text(
         filtered.sort(key=lambda h: h.final_score, reverse=True)
         return filtered
 
-    # Адаптивное понижение порога final_min
     current_final_min = final_min - 0.10
     while current_final_min >= 0.0:
         filtered = _filter_hits(
@@ -162,8 +174,6 @@ async def search_by_text(
 
         current_final_min -= 0.10
 
-    # Совсем fallback: если даже при final_min <= 0 ничего,
-    # возвращаем топ-5 по clip_score без учёта final_min.
     if not hits:
         return []
 
@@ -184,11 +194,14 @@ class _FrameCandidate:
 
 async def _fetch_frame_candidates(
     db: PostgresDatabase,
+    source_id: str,
+    start_at: str,
+    end_at: str,
     max_candidates: int,
 ) -> List[_FrameCandidate]:
     """
-    Загружает кандидатов для поиска по кадрам.
-    Сейчас: все эмбеддинги типа FRAME (с LIMIT).
+    Загружает кандидатов для поиска по кадрам:
+    только кадры указанного source_id и в окне [start_at, end_at].
     """
     sql = """
     SELECT
@@ -199,11 +212,14 @@ async def _fetch_frame_candidates(
     FROM embeddings e
     JOIN frames f ON e.frame_id = f.id
     WHERE e.entity_type = 'FRAME'
+      AND f.source_id = $1
+      AND f.at >= $2
+      AND f.at <= $3
     ORDER BY f.timestamp_sec
-    LIMIT $1;
+    LIMIT $4;
     """
 
-    rows = await db.fetch(sql, max_candidates)
+    rows = await db.fetch(sql, source_id, start_at, end_at, max_candidates)
 
     candidates: List[_FrameCandidate] = []
     for row in rows:
@@ -213,7 +229,7 @@ async def _fetch_frame_candidates(
 
         candidates.append(
             _FrameCandidate(
-                frame_id=row["frame_id"],
+                frame_id=str(row["frame_id"]),
                 timestamp_sec=float(row["timestamp_sec"]),
                 vector=vec,
             )
@@ -275,11 +291,15 @@ class _ObjectCandidate:
 
 async def _fetch_object_candidates(
     db: PostgresDatabase,
+    source_id: str,
+    start_at: str,
+    end_at: str,
     query_type: QueryObjectType,
     max_candidates: int,
 ) -> List[_ObjectCandidate]:
     """
-    Загружает кандидатов для поиска по объектам.
+    Загружает кандидатов для поиска по объектам:
+    только объекты, чьи кадры принадлежат source_id и лежат в [start_at, end_at].
     """
     sql = """
     SELECT
@@ -298,17 +318,27 @@ async def _fetch_object_candidates(
     LEFT JOIN transport_attrs ta ON o.id = ta.object_id
     LEFT JOIN person_attrs pa ON o.id = pa.object_id
     WHERE e.entity_type = 'OBJECT'
+      AND f.source_id = $1
+      AND f.at >= $2
+      AND f.at <= $3
       AND (
-          $1::text IS NULL
-          OR o.type::text = $1::text
+          $4::text IS NULL
+          OR o.type::text = $4::text
       )
     ORDER BY f.timestamp_sec
-    LIMIT $2;
+    LIMIT $5;
     """
 
     type_filter: Optional[str] = query_type.value if query_type is not None else None
 
-    rows = await db.fetch(sql, type_filter, max_candidates)
+    rows = await db.fetch(
+        sql,
+        source_id,
+        start_at,
+        end_at,
+        type_filter,
+        max_candidates,
+    )
 
     candidates: List[_ObjectCandidate] = []
 
@@ -319,8 +349,8 @@ async def _fetch_object_candidates(
 
         candidates.append(
             _ObjectCandidate(
-                object_id=row["object_id"],
-                frame_id=row["frame_id"],
+                object_id=str(row["object_id"]),
+                frame_id=str(row["frame_id"]),
                 timestamp_sec=float(row["timestamp_sec"]),
                 object_type=ObjectType(row["object_type"]),
                 vector=vec,
@@ -372,7 +402,6 @@ def _compute_object_color_score(
     - TRANSPORT: parsed.color + transport_color_hsv.
     - PERSON: upper_color / lower_color + соответствующие HSV.
     """
-    # TRANSPORT
     if cand.object_type == ObjectType.TRANSPORT:
         if not parsed.color:
             return 0.0
@@ -384,7 +413,6 @@ def _compute_object_color_score(
         h, s, v = hsv
         return compute_color_score(parsed.color, h, s, v)
 
-    # PERSON
     if cand.object_type == ObjectType.PERSON:
         scores: List[float] = []
 
@@ -420,23 +448,17 @@ def _compute_plate_score(
     if not query_plate or not db_plate:
         return 0.0
 
-    # Нормализуем оба номера в один и тот же формат
     q_norm = normalize_plate_text(query_plate)
     db_norm = normalize_plate_text(db_plate)
 
     if not q_norm or not db_norm:
         return 0.0
 
-    # Точное совпадение — сразу 1.0
     if q_norm == db_norm:
         return 1.0
 
-    # Плавное сравнение (0..100) → (0.0..1.0)
-    # Можно ratio, partial_ratio, token_sort_ratio — здесь обычный ratio достаточно.
     score = fuzz.ratio(q_norm, db_norm) / 100.0
 
-    # Опционально можно отрубать совсем слабые совпадения,
-    # чтобы "A123BC77" и "777" не давали 0.3:
     MIN_PLATE_SIMILARITY = 0.4
     if score < MIN_PLATE_SIMILARITY:
         return 0.0
@@ -531,7 +553,6 @@ def _combine_scores(
     elif has_plate and not has_color:
         w_clip, w_color, w_plate = 0.4, 0.0, 0.6
     else:
-        # и цвет, и номер
         w_clip, w_color, w_plate = 0.4, 0.2, 0.4
 
     return (

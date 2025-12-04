@@ -5,6 +5,7 @@ from .person_attrs_postgres_repository import PersonAttributesPostgresRepository
 from .embedding_postgres_repository import EmbeddingPostgresRepository
 from .task_postgres_repository import TaskPostgresRepository
 from .source_postgres_repository import SourcePostgresRepository
+from .search_job_postgres_repository import SearchJobPostgresRepository
 
 __all__ = [
     "FramePostgresRepository",
@@ -13,5 +14,6 @@ __all__ = [
     "PersonAttributesPostgresRepository",
     "EmbeddingPostgresRepository",
     "TaskPostgresRepository",
-    "SourcePostgresRepository"
+    "SourcePostgresRepository",
+    "SearchJobPostgresRepository"
 ]

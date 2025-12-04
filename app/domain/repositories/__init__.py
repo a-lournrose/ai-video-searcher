@@ -5,6 +5,7 @@ from .person_attrs_repository import PersonAttributesRepository
 from .embedding_repository import EmbeddingRepository
 from .task_repository import TaskRepository
 from .source_repository import SourceRepository
+from .search_job_repository import SearchJobRepository
 
 __all__ = [
     "FrameRepository",
@@ -13,5 +14,6 @@ __all__ = [
     "PersonAttributesRepository",
     "EmbeddingRepository",
     "TaskRepository",
-    "SourceRepository"
+    "SourceRepository",
+    "SearchJobRepository"
 ]

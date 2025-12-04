@@ -3,6 +3,7 @@ from .embedding import Embedding
 from .frame import Frame
 from .object import Object
 from .task import Task
+from .search_job import SearchJob
 from .value_objects import (
     FrameId,
     ObjectId,
@@ -13,7 +14,8 @@ from .value_objects import (
     EmbeddingEntityType,
     TaskId,
     SourceRowId,
-    VectorizedPeriodId
+    VectorizedPeriodId,
+    SearchJobId,
 )
 
 __all__ = [
@@ -32,5 +34,7 @@ __all__ = [
     "Embedding",
     "SourceRowId",
     "Task",
-    "VectorizedPeriodId"
+    "VectorizedPeriodId",
+    "SearchJobId",
+    "SearchJob"
 ]
