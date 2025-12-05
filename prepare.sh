@@ -60,4 +60,4 @@ pip install \
 
 pip install pytesseract rapidfuzz
 
-pip install asyncpg python-dotenv
+pip install asyncpg python-dotenv scipy

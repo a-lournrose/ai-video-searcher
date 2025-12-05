@@ -8,10 +8,10 @@ from app.infrastructure.db.postgres import PostgresDatabase, load_config_from_en
 from app.infrastructure.repositories.source_postgres_repository import SourcePostgresRepository
 
 
-async def get_all_sources() -> List[Source]:
+async def list_sources_usecase() -> List[Source]:
     """
-    Возвращает список всех источников, для которых есть векторизованные периоды
-    (по факту — просто всё содержимое таблицы sources).
+    Возвращает список всех источников.
+    Подходит для вызова как из HTTP-эндпоинта, так и из CLI.
     """
     config = load_config_from_env()
     db = PostgresDatabase(config)
@@ -24,8 +24,11 @@ async def get_all_sources() -> List[Source]:
         await db.close()
 
 
-async def main() -> None:
-    sources = await get_all_sources()
+async def _main_cli() -> None:
+    """
+    CLI-режим — используется только при запуске файла как скрипта.
+    """
+    sources = await list_sources_usecase()
 
     print("=== Sources ===")
     for src in sources:
@@ -33,4 +36,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_main_cli())

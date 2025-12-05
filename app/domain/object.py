@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from .value_objects import ObjectId, FrameId, ObjectType
 
@@ -19,3 +20,4 @@ class Object:
     frame_id: FrameId
     type: ObjectType
     bbox: BBox
+    track_id: Optional[int] = None

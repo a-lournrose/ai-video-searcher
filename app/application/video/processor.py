@@ -239,7 +239,11 @@ async def process_video(
                 print(f"[WARN] frame embedding failed for frame {frame.id}: {exc}")
 
             # 3. Детекция объектов
-            detections = detect_objects_on_frame(raw, conf_thres=0.25)
+            detections = detect_objects_on_frame(
+                raw,
+                conf_thres=0.25,
+                use_tracking=True,
+            )
 
             # 4. Маппим YOLO-детекции в доменные Object
             det_obj_pairs: list[tuple[DetectedObject, DomainObject]] = []
@@ -424,6 +428,7 @@ def _detected_to_domain_object(
         frame_id=frame_id,
         type=obj_type,
         bbox=bbox,
+        track_id=det.track_id,
     )
 
 

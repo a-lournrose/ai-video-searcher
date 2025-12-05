@@ -10,11 +10,13 @@ from app.infrastructure.repositories.vectorized_period_postgres_repository impor
 )
 
 
-async def get_vectorized_periods_for_source(source_id: str) -> List[VectorizedPeriod]:
+async def list_vectorized_periods_for_source_usecase(
+    source_id: str,
+) -> List[VectorizedPeriod]:
     """
     Возвращает список векторизованных периодов для заданного source_id.
 
-    По факту — просто всё, что лежит в таблице vectorized_periods для источника.
+    Подходит для вызова как из HTTP-эндпоинта, так и из CLI.
     """
     config = load_config_from_env()
     db = PostgresDatabase(config)
@@ -27,10 +29,14 @@ async def get_vectorized_periods_for_source(source_id: str) -> List[VectorizedPe
         await db.close()
 
 
-async def main() -> None:
+async def _main_cli() -> None:
+    """
+    Режим запуска как скрипта.
+    Использует тестовый source_id для локальной проверки.
+    """
     source_id = "test-source-id-1"
 
-    periods = await get_vectorized_periods_for_source(source_id)
+    periods = await list_vectorized_periods_for_source_usecase(source_id)
 
     print(f"=== Vectorized periods for source_id={source_id} ===")
     if not periods:
@@ -42,4 +48,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_main_cli())

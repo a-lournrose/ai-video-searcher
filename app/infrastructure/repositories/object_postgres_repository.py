@@ -23,19 +23,29 @@ class ObjectPostgresRepository(ObjectRepository):
         Вставляет новый объект в таблицу objects.
         """
         sql = """
-        INSERT INTO objects (id, frame_id, type, bbox_x, bbox_y, bbox_width, bbox_height)
-        VALUES ($1, $2, $3, $4, $5, $6, $7);
+        INSERT INTO objects (
+            id,
+            frame_id,
+            type,
+            bbox_x,
+            bbox_y,
+            bbox_width,
+            bbox_height,
+            track_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
         """
 
         await self._db.execute(
             sql,
             obj.id,
             obj.frame_id,
-            obj.type.value,       # 'PERSON' / 'TRANSPORT'
+            obj.type.value,        # 'PERSON' / 'TRANSPORT'
             obj.bbox.x,
             obj.bbox.y,
             obj.bbox.width,
             obj.bbox.height,
+            obj.track_id,          # может быть None
         )
 
     async def find_by_id(self, object_id: ObjectId) -> Optional[Object]:
@@ -43,7 +53,15 @@ class ObjectPostgresRepository(ObjectRepository):
         Находит объект по id или возвращает None.
         """
         sql = """
-        SELECT id, frame_id, type, bbox_x, bbox_y, bbox_width, bbox_height
+        SELECT
+            id,
+            frame_id,
+            type,
+            bbox_x,
+            bbox_y,
+            bbox_width,
+            bbox_height,
+            track_id
         FROM objects
         WHERE id = $1;
         """
@@ -66,9 +84,13 @@ class ObjectPostgresRepository(ObjectRepository):
             height=int(row["bbox_height"]),
         )
 
+        track_id_raw = row["track_id"]
+        track_id: Optional[int] = int(track_id_raw) if track_id_raw is not None else None
+
         return Object(
             id=ObjectId(row["id"]),
             frame_id=FrameId(row["frame_id"]),
             type=ObjectType(row["type"]),
             bbox=bbox,
+            track_id=track_id,
         )

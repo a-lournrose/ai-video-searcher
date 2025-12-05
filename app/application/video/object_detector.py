@@ -38,9 +38,10 @@ class DetectedObject:
     frame_index: int
     timestamp_sec: float
     category: DetectedObjectCategory
-    label: str        # сырой label из YOLO: "person", "car" и т.п.
+    label: str
     confidence: float
     bbox: BBox
+    track_id: Optional[int] = None
 
 
 _YOLO_OBJECTS_MODEL_INSTANCE: Optional[YOLO] = None
@@ -64,19 +65,37 @@ def _get_objects_model() -> YOLO:
 def detect_objects_on_frame(
     frame: RawFrame,
     conf_thres: float = 0.25,
+    use_tracking: bool = False,
 ) -> List[DetectedObject]:
     """
     Принимает один RawFrame и возвращает список DetectedObject (PERSON / TRANSPORT).
 
-    Никаких операций с БД — только чистая детекция.
+    Если use_tracking=True, использует встроенный трекер YOLO и
+    проставляет track_id для объектов.
+
+    Никаких операций с БД — только детекция/трекинг.
     """
     model = _get_objects_model()
 
     image: np.ndarray = frame.image
     height, width = image.shape[:2]
 
-    # Один кадр -> один result
-    result = model(image, conf=conf_thres, verbose=False)[0]
+    if use_tracking:
+        # persist=True — YOLO будет хранить состояние трекера между вызовами
+        result = model.track(
+            image,
+            conf=conf_thres,
+            persist=True,
+            verbose=False,
+        )[0]
+    else:
+        # Обычная детекция без трекинга
+        result = model(
+            image,
+            conf=conf_thres,
+            verbose=False,
+        )[0]
+
     boxes = result.boxes
     names = result.names
 
@@ -114,6 +133,10 @@ def detect_objects_on_frame(
 
         confidence = float(box.conf[0])
 
+        track_id: Optional[int] = None
+        if use_tracking and box.id is not None:
+            track_id = int(box.id[0])
+
         detected.append(
             DetectedObject(
                 frame_index=frame.index,
@@ -122,6 +145,7 @@ def detect_objects_on_frame(
                 label=raw_label,
                 confidence=confidence,
                 bbox=bbox,
+                track_id=track_id,
             )
         )
 
