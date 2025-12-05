@@ -4,6 +4,7 @@ from .frame import Frame
 from .object import Object
 from .task import Task
 from .search_job import SearchJob
+from .search_job_result import SearchJobResult
 from .value_objects import (
     FrameId,
     ObjectId,
@@ -16,6 +17,7 @@ from .value_objects import (
     SourceRowId,
     VectorizedPeriodId,
     SearchJobId,
+    SearchJobResultId,
 )
 
 __all__ = [
@@ -36,5 +38,7 @@ __all__ = [
     "Task",
     "VectorizedPeriodId",
     "SearchJobId",
-    "SearchJob"
+    "SearchJob",
+    "SearchJobResultId",
+    "SearchJobResult"
 ]

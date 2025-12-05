@@ -13,6 +13,7 @@ TaskId = NewType("TaskId", UUID)
 SourceRowId = NewType("SourceRowId", UUID)
 VectorizedPeriodId = NewType("VectorizedPeriodId", UUID)
 SearchJobId = NewType("SearchJobId", UUID)
+SearchJobResultId = NewType("SearchJobResultId", UUID)
 
 
 class ObjectType(str, Enum):

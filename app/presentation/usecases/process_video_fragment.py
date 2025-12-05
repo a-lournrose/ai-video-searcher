@@ -3,15 +3,20 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+from app.application.video.source_url_builder import build_video_url
 from app.application.video.processor import process_video
+
 from app.domain.vectorized_period import VectorizedPeriod
-from app.domain.value_objects import VectorizedPeriodId
+from app.domain.source import Source
+from app.domain.value_objects import VectorizedPeriodId, SourceRowId
+
 from app.infrastructure.db.postgres import PostgresDatabase, load_config_from_env
 from app.infrastructure.repositories.vectorized_period_postgres_repository import (
     VectorizedPeriodPostgresRepository,
 )
-
-url = "http://localhost:8000/media/5be64b77856745c4a332192147ed0eea/index.m3u8"
+from app.infrastructure.repositories.source_postgres_repository import (
+    SourcePostgresRepository,
+)
 
 ranges = [
     {
@@ -37,8 +42,22 @@ async def main() -> None:
     await db.connect()
 
     try:
+        source_repo = SourcePostgresRepository(db)
         periods_repo = VectorizedPeriodPostgresRepository(db)
 
+        # 1. Убедиться, что источник есть в таблице sources
+        existing_source = await source_repo.find_by_source_id(source_id)
+        if existing_source is None:
+            new_source = Source(
+                id=SourceRowId(uuid4()),
+                source_id=source_id,
+            )
+            await source_repo.create(new_source)
+            print(f"[sources] created source_id={source_id}")
+        else:
+            print(f"[sources] source_id={source_id} already exists")
+
+        # 2. Сохранить векторизованные интервалы
         periods = [
             VectorizedPeriod(
                 id=VectorizedPeriodId(uuid4()),
@@ -51,6 +70,13 @@ async def main() -> None:
 
         await periods_repo.add_many(periods)
         print(f"[vectorized_periods] saved {len(periods)} periods for source_id={source_id}")
+
+        # 3. Построить URL видео и прогнать пайплайн
+        url = build_video_url(
+            source_id=source_id,
+            start_at=ranges[0]["start_at"],
+            end_at=ranges[-1]["end_at"],
+        )
 
         await process_video(
             video_source=url,

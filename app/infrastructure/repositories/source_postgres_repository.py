@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List
 
 from asyncpg import Record
 
@@ -56,10 +56,10 @@ class SourcePostgresRepository(SourceRepository):
         Returns all sources.
         """
         sql = """
-              SELECT id, source_id
-              FROM sources
-              ORDER BY source_id; \
-              """
+        SELECT id, source_id
+        FROM sources
+        ORDER BY source_id;
+        """
         rows = await self._db.fetch(sql)
         return [self._map(row) for row in rows]
 
