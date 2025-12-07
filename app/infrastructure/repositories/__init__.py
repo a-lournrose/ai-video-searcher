@@ -6,6 +6,7 @@ from .embedding_postgres_repository import EmbeddingPostgresRepository
 from .source_postgres_repository import SourcePostgresRepository
 from .search_job_postgres_repository import SearchJobPostgresRepository
 from .search_job_event_postgres_repository import SearchJobEventPostgresRepository
+from .vectorization_job_postgres_repository import VectorizationJobPostgresRepository
 
 __all__ = [
     "FramePostgresRepository",
@@ -15,5 +16,6 @@ __all__ = [
     "EmbeddingPostgresRepository",
     "SourcePostgresRepository",
     "SearchJobPostgresRepository",
-    "SearchJobEventPostgresRepository"
+    "SearchJobEventPostgresRepository",
+    "VectorizationJobPostgresRepository"
 ]

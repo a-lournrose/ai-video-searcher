@@ -6,6 +6,7 @@ from .embedding_repository import EmbeddingRepository
 from .source_repository import SourceRepository
 from .search_job_repository import SearchJobRepository
 from .search_job_event_repository import SearchJobEventRepository
+from .vectorization_job_repository import VectorizationJobRepository
 
 __all__ = [
     "FrameRepository",
@@ -16,4 +17,5 @@ __all__ = [
     "SourceRepository",
     "SearchJobRepository",
     "SearchJobEventRepository",
+    "VectorizationJobRepository"
 ]

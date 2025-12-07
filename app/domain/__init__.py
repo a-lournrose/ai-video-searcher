@@ -4,6 +4,7 @@ from .frame import Frame
 from .object import Object
 from .search_job import SearchJob
 from .search_job_event import SearchJobEvent
+from .vectorization_job import VectorizationJob
 from .value_objects import (
     FrameId,
     ObjectId,
@@ -17,6 +18,7 @@ from .value_objects import (
     VectorizedPeriodId,
     SearchJobId,
     SearchJobResultId,
+    VectorizationJobId
 )
 
 __all__ = [
@@ -39,4 +41,6 @@ __all__ = [
     "SearchJob",
     "SearchJobResultId",
     "SearchJobEvent",
+    "VectorizationJobId",
+    "VectorizationJob",
 ]

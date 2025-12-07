@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -33,7 +33,20 @@ from app.presentation.usecases.list_event_frames import (
 from app.presentation.usecases.list_job_events import (
     list_job_events_usecase,
 )
+from app.presentation.usecases.check_vectorized_fragment import (
+    check_vectorized_fragment_usecase,
+)
+from app.presentation.usecases.vectorization_job_create import (
+    create_vectorization_job_usecase,
+)
+from app.presentation.usecases.vectorization_job_list import (
+    list_vectorization_jobs_usecase,
+)
+from app.presentation.usecases.vectorization_job_get import (
+    get_vectorization_job_usecase,
+)
 
+from app.domain.vectorization_job import VectorizationJob
 
 router = APIRouter(
     prefix="/search",
@@ -243,6 +256,76 @@ class SearchJobEventFrameResponse(BaseModel):
         description="URL снимка кадра с выделенным bbox этого объекта",
     )
 
+class VectorizationStatusResponse(BaseModel):
+    status: str = Field(
+        ...,
+        description=(
+            'Статус покрытия интервала векторами: '
+            '"FULLY_VECTORIZED", "PARTIALLY_VECTORIZED" или "NOT_VECTORIZED".'
+        ),
+        examples=["FULLY_VECTORIZED"],
+    )
+    missing_ranges: List[DateTimeRangeSchema] = Field(
+        ...,
+        description=(
+            "Список недостающих интервалов. Пустой список, если всё покрыто."
+        ),
+    )
+
+class CreateVectorizationJobRequest(BaseModel):
+    source_id: str = Field(
+        ...,
+        description="Идентификатор источника (камеры/видео)",
+        example="test-source-id-1",
+    )
+    ranges: List[DateTimeRangeSchema] = Field(
+        ...,
+        description=(
+            "Список интервалов, для которых нужно выполнить векторизацию "
+            "и анализ (в реальном времени источника)."
+        ),
+    )
+
+
+class CreateVectorizationJobResponse(BaseModel):
+    job_id: str = Field(
+        ...,
+        description="Идентификатор созданной задачи векторизации",
+    )
+    status: str = Field(
+        ...,
+        description="Начальный статус задачи",
+        example="CREATED",
+    )
+
+
+class VectorizationJobItemResponse(BaseModel):
+    id: str = Field(
+        ...,
+        description="Идентификатор задачи векторизации",
+    )
+    source_id: str = Field(
+        ...,
+        description="Идентификатор источника, к которому относится задача",
+    )
+    status: str = Field(
+        ...,
+        description="Текущий статус задачи",
+        example="PENDING",
+    )
+    progress: float = Field(
+        ...,
+        description="Прогресс выполнения задачи в процентах (0..100)",
+        example=42.5,
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Текст ошибки, если задача завершилась с ошибкой",
+    )
+    ranges: List[DateTimeRangeSchema] = Field(
+        ...,
+        description="Список интервалов, которые планируется (или была) векторизованы",
+    )
 
 # ---------- Эндпоинты ----------
 
@@ -410,3 +493,131 @@ async def list_search_job_event_frames(
         track_id=track_id,
     )
     return [SearchJobEventFrameResponse(**item) for item in items]
+
+@router.get(
+    "/sources/{source_id}/vectorization-status",
+    response_model=VectorizationStatusResponse,
+    summary="Проверить, есть ли векторизация для интервала",
+    description=(
+        "По source_id и интервалу времени возвращает статус покрытия "
+        "векторами и список недостающих подинтервалов."
+    ),
+)
+async def get_vectorization_status_for_interval(
+    source_id: str,
+    start_at: datetime = Query(..., description="Начало интервала (ISO 8601)"),
+    end_at: datetime = Query(..., description="Конец интервала (ISO 8601)"),
+) -> VectorizationStatusResponse:
+    result = await check_vectorized_fragment_usecase(
+        source_id=source_id,
+        start_at=start_at.isoformat(),
+        end_at=end_at.isoformat(),
+    )
+
+    missing = [
+        DateTimeRangeSchema(
+            start_at=datetime.fromisoformat(r["start_at"]),
+            end_at=datetime.fromisoformat(r["end_at"]),
+        )
+        for r in result["missing_ranges"]
+    ]
+
+    return VectorizationStatusResponse(
+        status=result["status"],
+        missing_ranges=missing,
+    )
+
+@router.post(
+    "/vectorization/jobs",
+    response_model=CreateVectorizationJobResponse,
+    status_code=202,
+    summary="Создать задачу векторизации",
+    description=(
+        "Создаёт задачу на векторизацию указанных интервалов для источника. "
+        "Фактическая обработка запускается асинхронно воркером."
+    ),
+)
+async def create_vectorization_job(
+    payload: CreateVectorizationJobRequest,
+) -> CreateVectorizationJobResponse:
+    ranges_payload = [
+        {
+            "start_at": r.start_at.isoformat(),
+            "end_at": r.end_at.isoformat(),
+        }
+        for r in payload.ranges
+    ]
+
+    job_id = await create_vectorization_job_usecase(
+        source_id=payload.source_id,
+        ranges=ranges_payload,
+    )
+
+    return CreateVectorizationJobResponse(
+        job_id=str(job_id),
+        status="CREATED",
+    )
+
+@router.get(
+    "/vectorization/jobs",
+    response_model=List[VectorizationJobItemResponse],
+    summary="Список задач векторизации",
+    description="Возвращает все задачи векторизации (для мониторинга/админки).",
+)
+async def list_vectorization_jobs() -> List[VectorizationJobItemResponse]:
+    jobs: List[VectorizationJob] = await list_vectorization_jobs_usecase()
+
+    items: List[VectorizationJobItemResponse] = []
+
+    for j in jobs:
+        ranges = [
+            DateTimeRangeSchema(
+                start_at=datetime.fromisoformat(r["start_at"]),
+                end_at=datetime.fromisoformat(r["end_at"]),
+            )
+            for r in j.ranges
+        ]
+
+        items.append(
+            VectorizationJobItemResponse(
+                id=str(j.id),
+                source_id=j.source_id,
+                status=j.status,
+                progress=j.progress,
+                error=j.error,
+                ranges=ranges,
+            )
+        )
+
+    return items
+
+@router.get(
+    "/vectorization/jobs/{job_id}",
+    response_model=VectorizationJobItemResponse,
+    summary="Детали задачи векторизации",
+    description="Возвращает детальную информацию по одной задаче векторизации.",
+)
+async def get_vectorization_job(
+    job_id: str,
+) -> VectorizationJobItemResponse:
+    job = await get_vectorization_job_usecase(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Vectorization job not found")
+
+    ranges = [
+        DateTimeRangeSchema(
+            start_at=datetime.fromisoformat(r["start_at"]),
+            end_at=datetime.fromisoformat(r["end_at"]),
+        )
+        for r in job.ranges
+    ]
+
+    return VectorizationJobItemResponse(
+        id=str(job.id),
+        source_id=job.source_id,
+        status=job.status,
+        progress=job.progress,
+        error=job.error,
+        ranges=ranges,
+    )
+

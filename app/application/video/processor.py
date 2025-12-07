@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Mapping, Optional, Sequence, Callable, Awaitable
 from uuid import uuid4
 
 import numpy as np
@@ -58,6 +58,7 @@ from app.infrastructure.repositories import (
     TransportAttributesPostgresRepository,
 )
 
+ProgressCallback = Callable[[float], Awaitable[None]]
 
 @dataclass(frozen=True)
 class TimeRange:
@@ -179,6 +180,7 @@ async def process_video(
     video_source: str | Path,
     source_id: str,
     ranges: Sequence[Mapping[str, str]],
+    progress_cb: Optional[ProgressCallback] = None,
 ) -> None:
     """
     Главный пайплайн обработки видео.
@@ -209,6 +211,13 @@ async def process_video(
 
         print("=== Video processing started ===")
 
+        # Оценка общего числа кадров (для прогресса)
+        estimated_total_frames = int(time_mapper.total_duration_sec * TARGET_FPS)
+        if estimated_total_frames <= 0:
+            estimated_total_frames = 1
+
+        processed_frames = 0
+
         total_frames = 0
         total_persons = 0
         total_transport = 0
@@ -218,6 +227,21 @@ async def process_video(
         total_person_attrs_saved = 0
 
         for raw in iter_video_frames(video_source, TARGET_FPS):
+            processed_frames += 1
+            total_frames += 1
+
+            # Обновляем прогресс не на каждом кадре, чтобы не долбить БД
+            if progress_cb is not None and (
+                    processed_frames == 1 or processed_frames % 10 == 0
+            ):
+                frac = processed_frames / float(estimated_total_frames)
+                if frac > 1.0:
+                    frac = 1.0
+                try:
+                    await progress_cb(frac)
+                except Exception as exc:
+                    print(f"[WARN] progress callback failed: {exc}")
+
             # 1. Сохраняем кадр
             frame = _raw_frame_to_frame_entity(
                 raw=raw,
@@ -228,7 +252,6 @@ async def process_video(
             print(frame)
 
             await frame_repo.create(frame)
-            total_frames += 1
 
             # 2. Эмбеддинг кадра
             try:

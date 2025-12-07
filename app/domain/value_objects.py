@@ -14,6 +14,7 @@ SourceRowId = NewType("SourceRowId", UUID)
 VectorizedPeriodId = NewType("VectorizedPeriodId", UUID)
 SearchJobId = NewType("SearchJobId", UUID)
 SearchJobResultId = NewType("SearchJobResultId", UUID)
+VectorizationJobId = NewType("VectorizationJobId", str)
 
 
 class ObjectType(str, Enum):

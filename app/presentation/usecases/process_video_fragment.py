@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List, Dict
+from typing import List, Dict, Optional, Callable, Awaitable
 from uuid import uuid4
 
 from app.application.video.source_url_builder import build_video_url
@@ -18,7 +18,7 @@ from app.infrastructure.repositories.vectorized_period_postgres_repository impor
 from app.infrastructure.repositories.source_postgres_repository import (
     SourcePostgresRepository,
 )
-
+from app.application.video.range_diff import compute_missing_ranges
 
 # Временные тестовые данные для локального запуска через __main__
 _DEFAULT_RANGES: List[Dict[str, str]] = [
@@ -38,19 +38,23 @@ _DEFAULT_RANGES: List[Dict[str, str]] = [
 
 _DEFAULT_SOURCE_ID = "test-source-id-1"
 
+ProgressCallback = Callable[[float], Awaitable[None]]
+
 
 async def process_video_fragment_usecase(
     source_id: str,
     ranges: List[Dict[str, str]],
+    progress_cb: Optional[ProgressCallback] = None,
 ) -> None:
     """
     Основной юзкейс обработки видеофрагмента:
     - гарантируем наличие source в БД;
-    - сохраняем интервалы векторизации;
-    - строим URL видео по общему интервалу;
-    - запускаем пайплайн process_video.
+    - смотрим, какие интервалы уже векторизованы;
+    - создаём записи только для недостающих интервалов;
+    - строим URL видео по общему интервалу недостающих кусочков;
+    - запускаем пайплайн process_video только по недостающим кускам.
 
-    Эту функцию удобно вызывать как из CLI (__main__), так и из HTTP-роутера.
+    Если все запрошенные диапазоны уже покрыты, ничего не делаем.
     """
     config = load_config_from_env()
     db = PostgresDatabase(config)
@@ -72,7 +76,23 @@ async def process_video_fragment_usecase(
         else:
             print(f"[sources] source_id={source_id} already exists")
 
-        # 2. Сохранить векторизованные интервалы
+        # 2. Узнаем, какие периоды уже векторизованы
+        existing_periods = await periods_repo.list_for_source(source_id)
+
+        # 3. Считаем недостающие диапазоны
+        missing_ranges = compute_missing_ranges(
+            requested=ranges,
+            existing_periods=existing_periods,
+        )
+
+        if not missing_ranges:
+            print(
+                f"[vectorized_periods] nothing to vectorize for source_id={source_id}, "
+                "all requested ranges already covered",
+            )
+            return
+
+        # 4. Сохранить недостающие интервалы
         periods = [
             VectorizedPeriod(
                 id=VectorizedPeriodId(uuid4()),
@@ -80,26 +100,34 @@ async def process_video_fragment_usecase(
                 start_at=item["start_at"],
                 end_at=item["end_at"],
             )
-            for item in ranges
+            for item in missing_ranges
         ]
 
         await periods_repo.add_many(periods)
         print(
-            f"[vectorized_periods] saved {len(periods)} periods "
+            f"[vectorized_periods] saved {len(periods)} NEW periods "
             f"for source_id={source_id}",
         )
 
-        # 3. Построить URL видео и прогнать пайплайн
+        # 5. Построить URL видео и прогнать пайплайн только для недостающих диапазонов
+        missing_sorted = sorted(
+            missing_ranges,
+            key=lambda x: x["start_at"],
+        )
+        overall_start = missing_sorted[0]["start_at"]
+        overall_end = missing_sorted[-1]["end_at"]
+
         url = build_video_url(
             source_id=source_id,
-            start_at=ranges[0]["start_at"],
-            end_at=ranges[-1]["end_at"],
+            start_at=overall_start,
+            end_at=overall_end,
         )
 
         await process_video(
             video_source=url,
             source_id=source_id,
             ranges=ranges,
+            progress_cb=progress_cb,
         )
     finally:
         await db.close()

@@ -50,6 +50,20 @@ class VectorizedPeriodPostgresRepository(VectorizedPeriodRepository):
         rows = await self._db.fetch(sql, source_id)
         return [self._map_row(row) for row in rows]
 
+    async def list_for_source(self, source_id: str) -> List[VectorizedPeriod]:
+        """
+        Возвращает все интервалы векторизации для конкретного источника,
+        отсортированные по start_at.
+        """
+        sql = """
+        SELECT id, source_id, start_at, end_at
+        FROM vectorized_periods
+        WHERE source_id = $1
+        ORDER BY start_at
+        """
+        rows = await self._db.fetch(sql, source_id)
+        return [self._map_row(row) for row in rows]
+
     @staticmethod
     def _map_row(row: Record) -> VectorizedPeriod:
         return VectorizedPeriod(

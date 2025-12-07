@@ -25,3 +25,11 @@ class VectorizedPeriodRepository(ABC):
         Возвращает все векторизованные периоды для указанного источника.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    async def list_for_source(self, source_id: str) -> List[VectorizedPeriod]:
+        """
+        Возвращает все интервалы векторизации для конкретного источника,
+        отсортированные по start_at.
+        """
+        raise NotImplementedError
