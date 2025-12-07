@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 
 def build_video_url(
@@ -15,12 +16,12 @@ def build_video_url(
       - вызывать внешний сервис,
       - подставлять разные base-url для prod/dev и т.д.
     """
-    return "http://localhost:8000/media/f98fdb80731a4da185035b60c222f818/index.m3u8"
+    return "http://localhost:8000/index.m3u8"
 
 def build_snapshot_url(
     source_id: str,
     at: str,
-    object_id: str | None,
+    object_id: Optional[str],
 ) -> str:
     """
     Конструирует URL HTTP-эндпоинта для получения кадра с (или без) bbox.

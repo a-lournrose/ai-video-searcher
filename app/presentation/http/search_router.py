@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -23,6 +26,13 @@ from app.presentation.usecases.search_job_list import (
 from app.domain.search_job import SearchJob
 from app.domain.source import Source
 from app.domain.vectorized_period import VectorizedPeriod
+
+from app.presentation.usecases.list_event_frames import (
+    list_event_frames_usecase,
+)
+from app.presentation.usecases.list_job_events import (
+    list_job_events_usecase,
+)
 
 
 router = APIRouter(
@@ -150,6 +160,89 @@ class SearchJobResponse(BaseModel):
     start_at: str
     end_at: str
 
+class SearchJobEventItemResponse(BaseModel):
+    kind: Literal["event", "frame"] = Field(
+        ...,
+        description='Тип результата: "event" (событие/трек) или "frame" (отдельный кадр)',
+        examples=["event"],
+    )
+    track_id: Optional[int] = Field(
+        ...,
+        description="Идентификатор трека (если есть), иначе null",
+    )
+    job_id: str = Field(
+        ...,
+        description="Идентификатор задачи поиска",
+    )
+    best_score: float = Field(
+        ...,
+        description="Лучший итоговый score внутри события или кадра",
+    )
+    best_object_id: Optional[str] = Field(
+        ...,
+        description="Идентификатор объекта с максимальным score внутри события; для кадров None",
+    )
+    preview_url: str = Field(
+        ...,
+        description="URL превью-снимка (кадр с выделенным bbox или просто кадр)",
+    )
+    start_at: Optional[str] = Field(
+        None,
+        description=(
+            "Начало интервала события (ISO 8601). "
+            'Для kind="event" заполнено, для kind="frame" = null.'
+        ),
+        example="2025-01-01T10:00:00",
+    )
+    end_at: Optional[str] = Field(
+        None,
+        description=(
+            "Конец интервала события (ISO 8601). "
+            'Для kind="event" заполнено, для kind="frame" = null.'
+        ),
+        example="2025-01-01T10:00:05",
+    )
+    at: Optional[str] = Field(
+        None,
+        description=(
+            'Конкретный момент кадра для превью (ISO 8601). '
+            'Для kind="frame" — сам кадр, '
+            'для kind="event" — кадр-превью лучшего объекта.'
+        ),
+        example="2025-01-01T10:00:02",
+    )
+
+
+class SearchJobEventFrameResponse(BaseModel):
+    event_id: str = Field(
+        ...,
+        description="Идентификатор строки search_job_events",
+    )
+    job_id: str = Field(
+        ...,
+        description="Идентификатор задачи поиска",
+    )
+    track_id: Optional[int] = Field(
+        ...,
+        description="Идентификатор трека (может быть null)",
+    )
+    object_id: str = Field(
+        ...,
+        description="Идентификатор объекта внутри события",
+    )
+    score: float = Field(
+        ...,
+        description="Итоговый score для данного объекта внутри события",
+    )
+    at: str = Field(
+        ...,
+        description="Момент времени кадра (ISO 8601)",
+    )
+    url: str = Field(
+        ...,
+        description="URL снимка кадра с выделенным bbox этого объекта",
+    )
+
 
 # ---------- Эндпоинты ----------
 
@@ -166,6 +259,7 @@ class SearchJobResponse(BaseModel):
 )
 async def process_video_fragment(
     payload: ProcessVideoFragmentRequest,
+    background_tasks: BackgroundTasks,
 ) -> ProcessVideoFragmentResponse:
     ranges_payload = [
         {
@@ -175,7 +269,8 @@ async def process_video_fragment(
         for r in payload.ranges
     ]
 
-    await process_video_fragment_usecase(
+    background_tasks.add_task(
+        process_video_fragment_usecase,
         source_id=payload.source_id,
         ranges=ranges_payload,
     )
@@ -280,3 +375,38 @@ async def list_search_jobs() -> List[SearchJobResponse]:
         )
 
     return result
+
+@router.get(
+    "/jobs/{job_id}/events",
+    response_model=List[SearchJobEventItemResponse],
+    summary="Список событий для задачи поиска",
+    description=(
+        "Группирует результаты поиска по track_id и возвращает события с превью "
+        '(кадр с выделенным bbox объекта или кадр, если kind="frame").'
+    ),
+)
+async def list_search_job_events(
+    job_id: str,
+) -> List[SearchJobEventItemResponse]:
+    items = await list_job_events_usecase(job_id=job_id)
+    return [SearchJobEventItemResponse(**item) for item in items]
+
+
+@router.get(
+    "/jobs/{job_id}/events/{track_id}/frames",
+    response_model=List[SearchJobEventFrameResponse],
+    summary="Кадры внутри события",
+    description=(
+        "Возвращает все объекты/кадры внутри одного события (одного track_id) "
+        "с URL снимков кадра и bbox для каждого объекта."
+    ),
+)
+async def list_search_job_event_frames(
+    job_id: str,
+    track_id: int,
+) -> List[SearchJobEventFrameResponse]:
+    items = await list_event_frames_usecase(
+        job_id=job_id,
+        track_id=track_id,
+    )
+    return [SearchJobEventFrameResponse(**item) for item in items]

@@ -33,6 +33,8 @@ class SearchHit:
         если поиск по кадрам — None.
     timestamp_sec:
         временная позиция кадра в видео.
+    track_id:
+        идентификатор трека объекта (если есть трекинг), иначе None.
     final_score:
         итоговый скор (для сортировки/фильтрации).
     clip_score:
@@ -51,6 +53,7 @@ class SearchHit:
     clip_score: float
     color_score: float
     plate_score: float
+    track_id: Optional[int]
 
 
 def _filter_hits(
@@ -239,7 +242,7 @@ async def _fetch_frame_candidates(
 
 
 def _score_frames(
-    parsed: ParsedQuery,
+    parsed: ParsedQuery,  # noqa: ARG001
     query_vector: List[float],
     candidates: List[_FrameCandidate],
 ) -> List[SearchHit]:
@@ -265,6 +268,7 @@ def _score_frames(
                 clip_score=clip,
                 color_score=color,
                 plate_score=plate,
+                track_id=None,  # для кадров трека нет
             )
         )
 
@@ -281,6 +285,7 @@ class _ObjectCandidate:
     frame_id: str
     timestamp_sec: float
     object_type: ObjectType
+    track_id: Optional[int]          # NEW
     vector: List[float]
 
     transport_color_hsv: Optional[str]
@@ -307,6 +312,7 @@ async def _fetch_object_candidates(
         e.vector,
         o.type AS object_type,
         o.frame_id,
+        o.track_id,
         f.timestamp_sec,
         ta.color_hsv,
         ta.license_plate,
@@ -353,6 +359,7 @@ async def _fetch_object_candidates(
                 frame_id=str(row["frame_id"]),
                 timestamp_sec=float(row["timestamp_sec"]),
                 object_type=ObjectType(row["object_type"]),
+                track_id=row["track_id"],  # может быть None или int
                 vector=vec,
                 transport_color_hsv=row["color_hsv"],
                 transport_plate=row["license_plate"],
@@ -387,6 +394,7 @@ def _score_objects(
                 clip_score=clip,
                 color_score=color,
                 plate_score=plate,
+                track_id=cand.track_id,  # ВАЖНО: прокидываем трек
             )
         )
 

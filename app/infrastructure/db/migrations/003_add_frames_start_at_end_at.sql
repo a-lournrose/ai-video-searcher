@@ -1,3 +1,3 @@
 ALTER TABLE frames
-    DROP COLUMN start_at,
-    DROP COLUMN end_at;
+    ADD COLUMN start_at TEXT NOT NULL,
+    ADD COLUMN end_at TEXT NOT NULL;

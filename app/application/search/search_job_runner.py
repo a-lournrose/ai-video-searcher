@@ -14,15 +14,10 @@ from app.infrastructure.repositories.search_job_postgres_repository import (
     SearchJobPostgresRepository,
 )
 
-from app.domain.search_job_result import SearchJobResult
-from app.domain.value_objects import SearchJobResultId
-from app.infrastructure.repositories.search_job_result_postgres_repository import (
-    SearchJobResultPostgresRepository,
-)
-
-from app.domain.value_objects import (
-    FrameId,
-    ObjectId,
+from app.domain.search_job_event import SearchJobEvent
+from app.domain.value_objects import SearchJobResultId, ObjectId
+from app.infrastructure.repositories.search_job_event_postgres_repository import (
+    SearchJobEventPostgresRepository,
 )
 
 
@@ -31,7 +26,7 @@ async def _run_job(job_id: SearchJobId) -> None:
     await db.connect()
 
     job_repo = SearchJobPostgresRepository(db)
-    result_repo = SearchJobResultPostgresRepository(db)
+    event_repo = SearchJobEventPostgresRepository(db)
 
     try:
         job = await job_repo.find_by_id(job_id)
@@ -52,24 +47,24 @@ async def _run_job(job_id: SearchJobId) -> None:
 
         await job_repo.update_progress(job_id, 20.0)
 
-        # 2. Сохранение результатов
-        results: list[SearchJobResult] = []
-        for idx, hit in enumerate(hits, start=1):
-            results.append(
-                SearchJobResult(
+        # 2. Сохранение событий поиска
+        events: list[SearchJobEvent] = []
+        for hit in hits:
+            # Ожидается, что hit содержит:
+            #   - hit.track_id: Optional[int]
+            #   - hit.object_id: Optional[UUID / ObjectId-like]
+            #   - hit.final_score: float
+            events.append(
+                SearchJobEvent(
                     id=SearchJobResultId(uuid4()),
                     job_id=job_id,
-                    frame_id=FrameId(hit.frame_id),
+                    track_id=getattr(hit, "track_id", None),
                     object_id=ObjectId(hit.object_id) if hit.object_id is not None else None,
-                    rank=idx,
-                    final_score=hit.final_score,
-                    clip_score=hit.clip_score,
-                    color_score=hit.color_score,
-                    plate_score=hit.plate_score,
+                    score=hit.final_score,
                 )
             )
 
-        await result_repo.create_many(results)
+        await event_repo.create_many(events)
 
         await job_repo.update_progress(job_id, 100.0)
         await job_repo.update_status(job_id, "DONE", None)
@@ -92,9 +87,8 @@ async def create_job(
     end_at: str,
 ) -> SearchJobId:
     """
-    Регистрирует задачу в БД + запускает воркер в фоне.
+    Регистрирует задачу в БД и запускает воркер в фоне.
     """
-
     job_id = SearchJobId(str(uuid4()))
 
     job = SearchJob(

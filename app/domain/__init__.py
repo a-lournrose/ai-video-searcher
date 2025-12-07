@@ -2,9 +2,8 @@ from .attributes import TransportAttributes, PersonAttributes
 from .embedding import Embedding
 from .frame import Frame
 from .object import Object
-from .task import Task
 from .search_job import SearchJob
-from .search_job_result import SearchJobResult
+from .search_job_event import SearchJobEvent
 from .value_objects import (
     FrameId,
     ObjectId,
@@ -35,10 +34,9 @@ __all__ = [
     "PersonAttributes",
     "Embedding",
     "SourceRowId",
-    "Task",
     "VectorizedPeriodId",
     "SearchJobId",
     "SearchJob",
     "SearchJobResultId",
-    "SearchJobResult"
+    "SearchJobEvent",
 ]

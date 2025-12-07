@@ -3,9 +3,9 @@ from .object_postgres_repository import ObjectPostgresRepository
 from .transport_attrs_postgres_repository import TransportAttributesPostgresRepository
 from .person_attrs_postgres_repository import PersonAttributesPostgresRepository
 from .embedding_postgres_repository import EmbeddingPostgresRepository
-from .task_postgres_repository import TaskPostgresRepository
 from .source_postgres_repository import SourcePostgresRepository
 from .search_job_postgres_repository import SearchJobPostgresRepository
+from .search_job_event_postgres_repository import SearchJobEventPostgresRepository
 
 __all__ = [
     "FramePostgresRepository",
@@ -13,7 +13,7 @@ __all__ = [
     "TransportAttributesPostgresRepository",
     "PersonAttributesPostgresRepository",
     "EmbeddingPostgresRepository",
-    "TaskPostgresRepository",
     "SourcePostgresRepository",
-    "SearchJobPostgresRepository"
+    "SearchJobPostgresRepository",
+    "SearchJobEventPostgresRepository"
 ]
