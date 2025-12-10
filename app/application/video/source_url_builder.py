@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import os
 from typing import Optional
 
@@ -7,6 +8,8 @@ from app.infrastructure.db.postgres import PostgresDatabase
 from app.infrastructure.repositories.source_postgres_repository import (
     SourcePostgresRepository,
 )
+
+from app.env_config import AUTH_MEDIA_BASE_URL
 
 MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://localhost:8000")
 SNAPSHOT_BASE_URL = os.getenv("SNAPSHOT_BASE_URL", "http://localhost:8001")
@@ -19,28 +22,16 @@ async def build_video_url(
     start_at: str,
     end_at: str,
 ) -> str:
-    """
-    Формирует реальный M3U8 URL.
-    Логика полностью повторяет фронтовую buildPeriodVideoUrl.
-    """
-
     repo = SourcePostgresRepository(db)
     source = await repo.find_by_source_id(source_id)
 
-    if source is None:
-        # fallback, если в БД нет записи
-        source_type_id = 1
-    else:
-        source_type_id = source.source_type_id
+    source_type_id = source.source_type_id if source else 1
 
-    # WHERE-условие как во фронтовом коде
     where = f"NOT(('{start_at}' > datetimeStop) OR ('{end_at}' < datetimeStart))"
-
-    # timestamp для bypass cache
-    ts = int(__import__("time").time() * 1000)
+    ts = int(time.time() * 1000)
 
     return (
-        f"{MEDIA_BASE_URL}/object/{source_type_id}/{source_id}/m3u8/"
+        f"{AUTH_MEDIA_BASE_URL}/object/{source_type_id}/{source_id}/m3u8/"
         f"?where={where}&limit=40001&key={ts}"
     )
 
