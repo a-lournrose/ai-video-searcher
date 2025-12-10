@@ -76,6 +76,11 @@ class ProcessVideoFragmentRequest(BaseModel):
         description="Идентификатор источника (камеры/видео)",
         example="test-source-id-1",
     )
+    source_type_id: int = Field(
+        ...,
+        description="Тип источника (например, камера, архивное видео и т.п.)",
+        example=1,
+    )
     ranges: List[DateTimeRangeSchema] = Field(
         ...,
         description="Список интервалов, для которых нужно выполнить векторизацию и анализ",
@@ -99,6 +104,11 @@ class SourceResponse(BaseModel):
         ...,
         description="Внешний идентификатор источника",
         example="test-source-id-1",
+    )
+    source_type_id: int = Field(
+        ...,
+        description="Тип источника",
+        example=1,
     )
 
 
@@ -355,6 +365,7 @@ async def process_video_fragment(
     background_tasks.add_task(
         process_video_fragment_usecase,
         source_id=payload.source_id,
+        source_type_id=payload.source_type_id,
         ranges=ranges_payload,
     )
 
@@ -373,6 +384,7 @@ async def get_sources() -> List[SourceResponse]:
         SourceResponse(
             id=str(src.id),
             source_id=src.source_id,
+            source_type_id=src.source_type_id,
         )
         for src in sources
     ]

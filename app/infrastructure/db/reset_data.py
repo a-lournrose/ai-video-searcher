@@ -15,7 +15,8 @@ TRUNCATE TABLE
     sources,
     vectorized_periods,
     search_jobs,
-    search_job_events
+    search_job_events,
+    vectorization_jobs
 RESTART IDENTITY CASCADE;
 """
 

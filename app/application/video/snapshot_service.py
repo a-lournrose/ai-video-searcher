@@ -77,7 +77,8 @@ async def get_snapshot_jpeg(
 
     # 3. Строим URL видеопотока
     # Сейчас start_at/end_at нам особо не нужны — можно подставить at.
-    video_url = build_video_url(
+    video_url = await build_video_url(
+        db=db,
         source_id=source_id,
         start_at=at,
         end_at=at,

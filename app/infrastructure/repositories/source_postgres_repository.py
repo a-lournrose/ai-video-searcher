@@ -4,9 +4,9 @@ from typing import Optional, List
 
 from asyncpg import Record
 
+from app.domain.repositories.source_repository import SourceRepository
 from app.domain.source import Source
 from app.domain.value_objects import SourceRowId
-from app.domain.repositories.source_repository import SourceRepository
 from app.infrastructure.db.postgres import PostgresDatabase
 
 
@@ -19,17 +19,22 @@ class SourcePostgresRepository(SourceRepository):
         Inserts new source row.
         """
         sql = """
-        INSERT INTO sources (id, source_id)
-        VALUES ($1, $2);
-        """
-        await self._db.execute(sql, source.id, source.source_id)
+              INSERT INTO sources (id, source_id, source_type_id)
+              VALUES ($1, $2, $3); \
+              """
+        await self._db.execute(
+            sql,
+            source.id,
+            source.source_id,
+            source.source_type_id,
+        )
 
     async def find_by_id(self, row_id: SourceRowId) -> Optional[Source]:
         sql = """
-        SELECT id, source_id
-        FROM sources
-        WHERE id = $1;
-        """
+              SELECT id, source_id, source_type_id
+              FROM sources
+              WHERE id = $1; \
+              """
         row = await self._db.fetchrow(sql, row_id)
         if row is None:
             return None
@@ -41,10 +46,10 @@ class SourcePostgresRepository(SourceRepository):
         Search by external user-facing source_id.
         """
         sql = """
-        SELECT id, source_id
-        FROM sources
-        WHERE source_id = $1;
-        """
+              SELECT id, source_id, source_type_id
+              FROM sources
+              WHERE source_id = $1; \
+              """
         row = await self._db.fetchrow(sql, source_id)
         if row is None:
             return None
@@ -56,10 +61,10 @@ class SourcePostgresRepository(SourceRepository):
         Returns all sources.
         """
         sql = """
-        SELECT id, source_id
-        FROM sources
-        ORDER BY source_id;
-        """
+              SELECT id, source_id, source_type_id
+              FROM sources
+              ORDER BY source_id; \
+              """
         rows = await self._db.fetch(sql)
         return [self._map(row) for row in rows]
 
@@ -68,4 +73,5 @@ class SourcePostgresRepository(SourceRepository):
         return Source(
             id=SourceRowId(row["id"]),
             source_id=row["source_id"],
+            source_type_id=row["source_type_id"],
         )

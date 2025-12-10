@@ -43,6 +43,7 @@ ProgressCallback = Callable[[float], Awaitable[None]]
 
 async def process_video_fragment_usecase(
     source_id: str,
+    source_type_id: int,
     ranges: List[Dict[str, str]],
     progress_cb: Optional[ProgressCallback] = None,
 ) -> None:
@@ -70,9 +71,10 @@ async def process_video_fragment_usecase(
             new_source = Source(
                 id=SourceRowId(uuid4()),
                 source_id=source_id,
+                source_type_id=source_type_id,
             )
             await source_repo.create(new_source)
-            print(f"[sources] created source_id={source_id}")
+            print(f"[sources] created source_id={source_id} (source_type_id={source_type_id})")
         else:
             print(f"[sources] source_id={source_id} already exists")
 
@@ -117,7 +119,8 @@ async def process_video_fragment_usecase(
         overall_start = missing_sorted[0]["start_at"]
         overall_end = missing_sorted[-1]["end_at"]
 
-        url = build_video_url(
+        url = await build_video_url(
+            db=db,
             source_id=source_id,
             start_at=overall_start,
             end_at=overall_end,
@@ -140,6 +143,7 @@ async def _main_cli() -> None:
     """
     await process_video_fragment_usecase(
         source_id=_DEFAULT_SOURCE_ID,
+        source_type_id=1,  # тестовый тип источника для локального запуска
         ranges=_DEFAULT_RANGES,
     )
 
