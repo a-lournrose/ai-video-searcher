@@ -49,6 +49,7 @@ async def _run_vectorization_job(job_id: VectorizationJobId) -> None:
         await process_video_fragment_usecase(
             source_id=job.source_id,
             source_type_id=job.source_type_id,
+            source_name=job.source_name,
             ranges=job.ranges,
             progress_cb=_progress_cb,
         )
@@ -67,6 +68,7 @@ async def _run_vectorization_job(job_id: VectorizationJobId) -> None:
 async def create_vectorization_job(
     source_id: str,
     source_type_id: int,
+    source_name: str,
     ranges: List[Dict[str, str]],
     repo: VectorizationJobRepository,
 ) -> VectorizationJobId:
@@ -79,6 +81,7 @@ async def create_vectorization_job(
         id=job_id,
         source_id=source_id,
         source_type_id=source_type_id,
+        source_name=source_name,
         ranges=ranges,
         status="PENDING",
         progress=0.0,

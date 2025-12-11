@@ -16,3 +16,4 @@ class Source:
     id: SourceRowId
     source_id: str
     source_type_id: int
+    source_name: str

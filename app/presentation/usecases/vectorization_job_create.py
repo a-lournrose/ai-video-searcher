@@ -15,6 +15,7 @@ from app.application.vectorization.vectorization_job_runner import (
 async def create_vectorization_job_usecase(
     source_id: str,
     source_type_id: int,
+    source_name: str,
     ranges: List[Dict[str, str]],
 ) -> VectorizationJobId:
     """
@@ -29,6 +30,7 @@ async def create_vectorization_job_usecase(
         job_id = await create_vectorization_job(
             source_id=source_id,
             source_type_id=source_type_id,
+            source_name=source_name,
             ranges=ranges,
             repo=repo,
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from asyncpg import Record
 
@@ -25,17 +25,21 @@ class VectorizationJobPostgresRepository(VectorizationJobRepository):
         INSERT INTO vectorization_jobs (
             id,
             source_id,
+            source_type_id,
+            source_name,
             ranges,
             status,
             progress,
             error
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         """
         await self._db.execute(
             sql,
             job.id,
             job.source_id,
+            job.source_type_id,
+            job.source_name,
             json.dumps(job.ranges),
             job.status,
             job.progress,
@@ -47,24 +51,40 @@ class VectorizationJobPostgresRepository(VectorizationJobRepository):
         job_id: VectorizationJobId,
     ) -> Optional[VectorizationJob]:
         sql = """
-        SELECT id, source_id, ranges, status, progress, error
+        SELECT
+            id,
+            source_id,
+            source_type_id,
+            source_name,
+            ranges,
+            status,
+            progress,
+            error
         FROM vectorization_jobs
-        WHERE id = $1
+        WHERE id = $1;
         """
-        row = await self._db.fetchrow(sql, job_id)
+        row = await self._db.fetchrow(sql, str(job_id))
         if row is None:
             return None
 
-        return self._map_row(row)
+        return self._map(row)
 
     async def list_all(self) -> List[VectorizationJob]:
         sql = """
-        SELECT id, source_id, ranges, status, progress, error
+        SELECT
+            id,
+            source_id,
+            source_type_id,
+            source_name,
+            ranges,
+            status,
+            progress,
+            error
         FROM vectorization_jobs
-        ORDER BY created_at DESC
+        ORDER BY id DESC;
         """
         rows = await self._db.fetch(sql)
-        return [self._map_row(r) for r in rows]
+        return [self._map(row) for row in rows]
 
     async def update_status(
         self,
@@ -104,18 +124,36 @@ class VectorizationJobPostgresRepository(VectorizationJobRepository):
         )
 
     @staticmethod
-    def _map_row(row: Record) -> VectorizationJob:
-        ranges_raw = row["ranges"]
-        if isinstance(ranges_raw, str):
-            ranges = json.loads(ranges_raw)
-        else:
-            ranges = ranges_raw
+    def _parse_ranges(raw: object) -> List[Dict[str, str]]:
+        """
+        Приводим значение из БД к List[Dict[str, str]].
+        """
+        if raw is None:
+            return []
 
+        if isinstance(raw, str):
+            try:
+                data = json.loads(raw)
+            except Exception:
+                return []
+            if isinstance(data, list):
+                return data
+            return []
+
+        if isinstance(raw, list):
+            return raw
+
+        return []
+
+    @staticmethod
+    def _map(row: Record) -> VectorizationJob:
         return VectorizationJob(
-            id=VectorizationJobId(str(row["id"])),
+            id=VectorizationJobId(row["id"]),
             source_id=row["source_id"],
-            ranges=ranges,
+            source_type_id=row["source_type_id"],
+            source_name=row["source_name"],
+            ranges=VectorizationJobPostgresRepository._parse_ranges(row["ranges"]),
             status=row["status"],
-            progress=float(row["progress"]),
+            progress=row["progress"],
             error=row["error"],
         )

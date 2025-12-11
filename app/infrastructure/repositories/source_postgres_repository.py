@@ -19,19 +19,20 @@ class SourcePostgresRepository(SourceRepository):
         Inserts new source row.
         """
         sql = """
-              INSERT INTO sources (id, source_id, source_type_id)
-              VALUES ($1, $2, $3); \
+              INSERT INTO sources (id, source_id, source_type_id, name)
+              VALUES ($1, $2, $3, $4); \
               """
         await self._db.execute(
             sql,
             source.id,
             source.source_id,
             source.source_type_id,
+            source.source_name,
         )
 
     async def find_by_id(self, row_id: SourceRowId) -> Optional[Source]:
         sql = """
-              SELECT id, source_id, source_type_id
+              SELECT id, source_id, source_type_id, name
               FROM sources
               WHERE id = $1; \
               """
@@ -46,7 +47,7 @@ class SourcePostgresRepository(SourceRepository):
         Search by external user-facing source_id.
         """
         sql = """
-              SELECT id, source_id, source_type_id
+              SELECT id, source_id, source_type_id, name
               FROM sources
               WHERE source_id = $1; \
               """
@@ -61,7 +62,7 @@ class SourcePostgresRepository(SourceRepository):
         Returns all sources.
         """
         sql = """
-              SELECT id, source_id, source_type_id
+              SELECT id, source_id, source_type_id, name
               FROM sources
               ORDER BY source_id; \
               """
@@ -74,4 +75,5 @@ class SourcePostgresRepository(SourceRepository):
             id=SourceRowId(row["id"]),
             source_id=row["source_id"],
             source_type_id=row["source_type_id"],
+            source_name=row["name"],
         )

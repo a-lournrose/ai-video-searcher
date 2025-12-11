@@ -8,18 +8,14 @@ from .value_objects import SearchJobId
 
 @dataclass(frozen=True)
 class SearchJob:
-    """
-    Хранит задачу поиска, которую ставит пользователь.
-    """
-
     id: SearchJobId
     title: str
     text_query: str
-
     source_id: str
+    source_type_id: int
+    source_name: str
     start_at: str
     end_at: str
-
+    status: str
     progress: float
-    status: str                   # PENDING / RUNNING / DONE / FAILED
-    error: Optional[str]          # текст ошибки если FAILED
+    error: Optional[str]

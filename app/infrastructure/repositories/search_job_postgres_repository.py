@@ -37,8 +37,25 @@ class SearchJobPostgresRepository(SearchJobRepository):
         )
 
     async def find_all(self) -> List[SearchJob]:
-        rows = await self._db.fetch("SELECT * FROM search_jobs ORDER BY start_at DESC")
-        return [self._map(r) for r in rows]
+        sql = """
+              SELECT j.id, \
+                     j.title, \
+                     j.text_query, \
+                     j.source_id, \
+                     j.start_at, \
+                     j.end_at, \
+                     j.status, \
+                     j.progress, \
+                     j.error, \
+                     s.source_type_id, \
+                     s.name AS source_name
+              FROM search_jobs AS j
+                       LEFT JOIN sources AS s
+                                 ON s.source_id = j.source_id
+              ORDER BY j.id DESC; \
+              """
+        rows = await self._db.fetch(sql)
+        return [self._map(row) for row in rows]
 
     async def find_by_id(self, job_id: SearchJobId) -> Optional[SearchJob]:
         row = await self._db.fetchrow("SELECT * FROM search_jobs WHERE id=$1", job_id)
@@ -51,9 +68,11 @@ class SearchJobPostgresRepository(SearchJobRepository):
             title=row["title"],
             text_query=row["text_query"],
             source_id=row["source_id"],
+            source_type_id=row["source_type_id"],
+            source_name=row["source_name"],
             start_at=row["start_at"],
             end_at=row["end_at"],
-            progress=float(row["progress"]),
             status=row["status"],
+            progress=row["progress"],
             error=row["error"],
         )

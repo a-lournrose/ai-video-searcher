@@ -109,17 +109,19 @@ class SourceResponse(BaseModel):
     id: str = Field(
         ...,
         description="Внутренний идентификатор записи источника",
-        example="f2a1e3e4-4a1f-4c2d-9c41-5d7d7d7d7d7d",
     )
     source_id: str = Field(
         ...,
         description="Внешний идентификатор источника",
-        example="test-source-id-1",
     )
     source_type_id: int = Field(
         ...,
         description="Тип источника",
-        example=1,
+    )
+    source_name: str = Field(
+        ...,
+        description="Человекочитаемое имя источника",
+        example="Камера у входа",
     )
 
 
@@ -189,6 +191,8 @@ class SearchJobResponse(BaseModel):
     title: str
     text_query: str
     source_id: str
+    source_type_id: int
+    source_name: str
     status: str
     progress: float
     start_at: str
@@ -304,6 +308,11 @@ class CreateVectorizationJobRequest(BaseModel):
         description="Тип источника (как в таблице sources/source_type_id)",
         example=1,
     )
+    source_name: str = Field(
+        ...,
+        description="Человекочитаемое имя источника",
+        example="Камера у входа",
+    )
     ranges: List[DateTimeRangeSchema] = Field(
         ...,
         description=(
@@ -333,6 +342,16 @@ class VectorizationJobItemResponse(BaseModel):
     source_id: str = Field(
         ...,
         description="Идентификатор источника, к которому относится задача",
+    )
+    source_type_id: int = Field(
+        ...,
+        description="Тип источника",
+        example=1,
+    )
+    source_name: str = Field(
+        ...,
+        description="Человекочитаемое имя источника",
+        example="Камера у входа",
     )
     status: str = Field(
         ...,
@@ -401,6 +420,7 @@ async def get_sources() -> List[SourceResponse]:
             id=str(src.id),
             source_id=src.source_id,
             source_type_id=src.source_type_id,
+            source_name=src.source_name,
         )
         for src in sources
     ]
@@ -478,6 +498,8 @@ async def list_search_jobs() -> List[SearchJobResponse]:
                 title=j.title,
                 text_query=j.text_query,
                 source_id=j.source_id,
+                source_type_id=j.source_type_id,
+                source_name=j.source_name,
                 status=j.status,
                 progress=j.progress,
                 start_at=j.start_at,
@@ -579,6 +601,7 @@ async def create_vectorization_job(
     job_id = await create_vectorization_job_usecase(
         source_id=payload.source_id,
         source_type_id=payload.source_type_id,
+        source_name=payload.source_name,
         ranges=ranges_payload,
     )
 
@@ -611,6 +634,8 @@ async def list_vectorization_jobs() -> List[VectorizationJobItemResponse]:
             VectorizationJobItemResponse(
                 id=str(j.id),
                 source_id=j.source_id,
+                source_type_id=j.source_type_id,
+                source_name=j.source_name,
                 status=j.status,
                 progress=j.progress,
                 error=j.error,
@@ -644,6 +669,8 @@ async def get_vectorization_job(
     return VectorizationJobItemResponse(
         id=str(job.id),
         source_id=job.source_id,
+        source_type_id=job.source_type_id,
+        source_name=job.source_name,
         status=job.status,
         progress=job.progress,
         error=job.error,

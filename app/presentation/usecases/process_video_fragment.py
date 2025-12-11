@@ -44,6 +44,7 @@ ProgressCallback = Callable[[float], Awaitable[None]]
 async def process_video_fragment_usecase(
     source_id: str,
     source_type_id: int,
+    source_name: str,
     ranges: List[Dict[str, str]],
     progress_cb: Optional[ProgressCallback] = None,
 ) -> None:
@@ -77,14 +78,19 @@ async def process_video_fragment_usecase(
                 id=SourceRowId(uuid4()),
                 source_id=source_id,
                 source_type_id=source_type_id,
+                source_name=source_name,
             )
             await source_repo.create(new_source)
             print(
                 f"[sources] created source_id={source_id} "
-                f"(source_type_id={source_type_id})",
+                f"(source_type_id={source_type_id}, source_name={source_name})"
             )
         else:
-            print(f"[sources] source_id={source_id} already exists")
+            print(
+                f"[sources] source_id={source_id} already exists "
+                f"(source_type_id={existing_source.source_type_id}, "
+                f"source_name={existing_source.source_name})"
+            )
 
         # 2. Узнаем, какие периоды уже векторизованы
         existing_periods = await periods_repo.list_for_source(source_id)
@@ -155,13 +161,10 @@ async def process_video_fragment_usecase(
 
 
 async def _main_cli() -> None:
-    """
-    Вспомогательная функция для запуска файла как скрипта:
-    использует тестовые константы _DEFAULT_SOURCE_ID и _DEFAULT_RANGES.
-    """
     await process_video_fragment_usecase(
         source_id=_DEFAULT_SOURCE_ID,
         source_type_id=1,  # тестовый тип источника для локального запуска
+        source_name="Test source",
         ranges=_DEFAULT_RANGES,
     )
 
