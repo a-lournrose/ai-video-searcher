@@ -8,16 +8,10 @@ from app.domain.value_objects import VectorizationJobId
 
 @dataclass(frozen=True)
 class VectorizationJob:
-    """
-    Задача на векторизацию видеофрагмента.
-
-    ranges:
-        список интервалов в ISO-строках вида:
-        [{ "start_at": "...", "end_at": "..." }, ...]
-    """
     id: VectorizationJobId
     source_id: str
+    source_type_id: int
     ranges: List[Dict[str, str]]
     status: str
     progress: float
-    error: Optional[str]
+    error: str | None

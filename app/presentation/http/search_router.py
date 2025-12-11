@@ -53,6 +53,17 @@ router = APIRouter(
     tags=["search"],
 )
 
+# {
+#   "source_id": "a86bdbb0-e279-44c8-a356-20b5e26b884b",
+#   "source_type_id": 2,
+#   "ranges": [
+#     {
+#       "start_at": "2025-12-10T09:25:00",
+#       "end_at": "2025-12-10T09:25:10"
+#     }
+#   ]
+# }
+
 
 # ---------- Схемы (Swagger-модели) ----------
 
@@ -288,6 +299,11 @@ class CreateVectorizationJobRequest(BaseModel):
         description="Идентификатор источника (камеры/видео)",
         example="test-source-id-1",
     )
+    source_type_id: int = Field(
+        ...,
+        description="Тип источника (как в таблице sources/source_type_id)",
+        example=1,
+    )
     ranges: List[DateTimeRangeSchema] = Field(
         ...,
         description=(
@@ -340,36 +356,36 @@ class VectorizationJobItemResponse(BaseModel):
 # ---------- Эндпоинты ----------
 
 
-@router.post(
-    "/video/process-fragment",
-    response_model=ProcessVideoFragmentResponse,
-    status_code=202,
-    summary="Обработать фрагмент видео",
-    description=(
-        "Запускает пайплайн обработки видеофрагмента для заданного источника и "
-        "списка интервалов: сохранение кадров, эмбеддинги, детекция объектов и т.п."
-    ),
-)
-async def process_video_fragment(
-    payload: ProcessVideoFragmentRequest,
-    background_tasks: BackgroundTasks,
-) -> ProcessVideoFragmentResponse:
-    ranges_payload = [
-        {
-            "start_at": r.start_at.isoformat(),
-            "end_at": r.end_at.isoformat(),
-        }
-        for r in payload.ranges
-    ]
-
-    background_tasks.add_task(
-        process_video_fragment_usecase,
-        source_id=payload.source_id,
-        source_type_id=payload.source_type_id,
-        ranges=ranges_payload,
-    )
-
-    return ProcessVideoFragmentResponse(detail="Video processing started")
+# @router.post(
+#     "/video/process-fragment",
+#     response_model=ProcessVideoFragmentResponse,
+#     status_code=202,
+#     summary="Обработать фрагмент видео",
+#     description=(
+#         "Запускает пайплайн обработки видеофрагмента для заданного источника и "
+#         "списка интервалов: сохранение кадров, эмбеддинги, детекция объектов и т.п."
+#     ),
+# )
+# async def process_video_fragment(
+#     payload: ProcessVideoFragmentRequest,
+#     background_tasks: BackgroundTasks,
+# ) -> ProcessVideoFragmentResponse:
+#     ranges_payload = [
+#         {
+#             "start_at": r.start_at.isoformat(),
+#             "end_at": r.end_at.isoformat(),
+#         }
+#         for r in payload.ranges
+#     ]
+#
+#     background_tasks.add_task(
+#         process_video_fragment_usecase,
+#         source_id=payload.source_id,
+#         source_type_id=payload.source_type_id,
+#         ranges=ranges_payload,
+#     )
+#
+#     return ProcessVideoFragmentResponse(detail="Video processing started")
 
 
 @router.get(
@@ -562,6 +578,7 @@ async def create_vectorization_job(
 
     job_id = await create_vectorization_job_usecase(
         source_id=payload.source_id,
+        source_type_id=payload.source_type_id,
         ranges=ranges_payload,
     )
 

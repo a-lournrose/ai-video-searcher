@@ -51,11 +51,16 @@ async def process_video_fragment_usecase(
     Основной юзкейс обработки видеофрагмента:
     - гарантируем наличие source в БД;
     - смотрим, какие интервалы уже векторизованы;
-    - создаём записи только для недостающих интервалов;
+    - считаем недостающие интервалы;
     - строим URL видео по общему интервалу недостающих кусочков;
-    - запускаем пайплайн process_video только по недостающим кускам.
+    - запускаем пайплайн process_video;
+    - ТОЛЬКО ПОСЛЕ УСПЕШНОГО ЗАВЕРШЕНИЯ пайплайна сохраняем VectorizedPeriod
+      для недостающих интервалов.
 
     Если все запрошенные диапазоны уже покрыты, ничего не делаем.
+
+    Если в процессе обработки возникает ошибка, новые записи в vectorized_periods
+    не создаются.
     """
     config = load_config_from_env()
     db = PostgresDatabase(config)
@@ -74,7 +79,10 @@ async def process_video_fragment_usecase(
                 source_type_id=source_type_id,
             )
             await source_repo.create(new_source)
-            print(f"[sources] created source_id={source_id} (source_type_id={source_type_id})")
+            print(
+                f"[sources] created source_id={source_id} "
+                f"(source_type_id={source_type_id})",
+            )
         else:
             print(f"[sources] source_id={source_id} already exists")
 
@@ -94,7 +102,38 @@ async def process_video_fragment_usecase(
             )
             return
 
-        # 4. Сохранить недостающие интервалы
+        # 4. Строим общий интервал для недостающих диапазонов и URL видео
+        missing_sorted = sorted(
+            missing_ranges,
+            key=lambda x: x["start_at"],
+        )
+        overall_start = missing_sorted[0]["start_at"]
+        overall_end = missing_sorted[-1]["end_at"]
+
+        url = await build_video_url(
+            db=db,
+            source_id=source_id,
+            start_at=overall_start,
+            end_at=overall_end,
+        )
+
+        # 5. Запускаем пайплайн обработки.
+        # Если здесь произойдёт исключение, VectorizedPeriod мы НЕ создаём.
+        try:
+            await process_video(
+                video_source=url,
+                source_id=source_id,
+                ranges=ranges,
+                progress_cb=progress_cb,
+            )
+        except Exception as exc:
+            # Логируем и пробрасываем выше — период векторизованным не считаем
+            print(
+                f"[vectorization] process_video failed for source_id={source_id}: {exc}",
+            )
+            raise
+
+        # 6. Если пайплайн успешно завершился, сохраняем недостающие периоды
         periods = [
             VectorizedPeriod(
                 id=VectorizedPeriodId(uuid4()),
@@ -111,27 +150,6 @@ async def process_video_fragment_usecase(
             f"for source_id={source_id}",
         )
 
-        # 5. Построить URL видео и прогнать пайплайн только для недостающих диапазонов
-        missing_sorted = sorted(
-            missing_ranges,
-            key=lambda x: x["start_at"],
-        )
-        overall_start = missing_sorted[0]["start_at"]
-        overall_end = missing_sorted[-1]["end_at"]
-
-        url = await build_video_url(
-            db=db,
-            source_id=source_id,
-            start_at=overall_start,
-            end_at=overall_end,
-        )
-
-        await process_video(
-            video_source=url,
-            source_id=source_id,
-            ranges=ranges,
-            progress_cb=progress_cb,
-        )
     finally:
         await db.close()
 

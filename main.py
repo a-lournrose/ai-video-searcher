@@ -13,6 +13,17 @@ APP_PORT = int(os.getenv("APP_PORT", "8001"))
 
 
 app = FastAPI()
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # разрешить все домены
+    allow_credentials=True,
+    allow_methods=["*"],          # разрешить любые методы
+    allow_headers=["*"],          # разрешить любые заголовки
+)
+
 app.include_router(search_router)
 app.include_router(snapshot_router)
 
