@@ -162,6 +162,8 @@ class CreateSearchJobRequest(BaseModel):
         description="Идентификатор источника, по которому выполняется поиск",
         example="test-source-id-1",
     )
+    source_type_id: int = Field(..., description="Тип источника")
+    source_name: str = Field(..., description="Имя источника")
     start_at: datetime = Field(
         ...,
         description="Начало временного диапазона поиска",
@@ -470,6 +472,8 @@ async def create_search_job(
         title=payload.title,
         text_query=payload.text_query,
         source_id=payload.source_id,
+        source_type_id=payload.source_type_id,
+        source_name=payload.source_name,
         start_at=payload.start_at.isoformat(),
         end_at=payload.end_at.isoformat(),
     )

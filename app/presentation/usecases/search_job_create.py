@@ -11,6 +11,8 @@ async def create_search_job_usecase(
     title: str,
     text_query: str,
     source_id: str,
+    source_type_id: int,
+    source_name: str,
     start_at: str,
     end_at: str,
 ) -> str:
@@ -32,6 +34,8 @@ async def create_search_job_usecase(
             title=title,
             text_query=text_query,
             source_id=source_id,
+            source_type_id=source_type_id,
+            source_name=source_name,
             start_at=start_at,
             end_at=end_at,
         )

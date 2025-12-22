@@ -58,7 +58,24 @@ class SearchJobPostgresRepository(SearchJobRepository):
         return [self._map(row) for row in rows]
 
     async def find_by_id(self, job_id: SearchJobId) -> Optional[SearchJob]:
-        row = await self._db.fetchrow("SELECT * FROM search_jobs WHERE id=$1", job_id)
+        sql = """
+              SELECT j.id,
+                     j.title,
+                     j.text_query,
+                     j.source_id,
+                     j.start_at,
+                     j.end_at,
+                     j.status,
+                     j.progress,
+                     j.error,
+                     s.source_type_id,
+                     s.name AS source_name
+              FROM search_jobs AS j
+                       LEFT JOIN sources AS s
+                                 ON s.source_id = j.source_id
+              WHERE j.id = $1 LIMIT 1
+              """
+        row = await self._db.fetchrow(sql, job_id)
         return None if row is None else self._map(row)
 
     @staticmethod
